@@ -247,6 +247,7 @@ Object.keys(vendors).forEach((vendor) => {
                     "#3b82f6",
                     "#10b981",
                     "#ef4444",
+                    "rgb(187, 51, 137)",
                     "#f59e0b"
                   ];
 
