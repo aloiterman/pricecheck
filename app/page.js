@@ -3,16 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Legend
-} from "recharts";
-
 export default function Dashboard() {
   const router = useRouter();
 
@@ -24,16 +14,27 @@ export default function Dashboard() {
     date: new Date().toISOString().split("T")[0]
   });
 
-  // ✅ Load data
+  //  Load data
   useEffect(() => {
     const saved = localStorage.getItem("items");
     if (saved) setItems(JSON.parse(saved));
   }, []);
 
-  // ✅ Save data
-  useEffect(() => {
-    localStorage.setItem("items", JSON.stringify(items));
-  }, [items]);
+  //  Save data
+useEffect(() => {
+  const loadItems = () => {
+    const saved = localStorage.getItem("items");
+    if (saved) setItems(JSON.parse(saved));
+  };
+
+  loadItems();
+
+  window.addEventListener("focus", loadItems);
+
+  return () => {
+    window.removeEventListener("focus", loadItems);
+  };
+}, []);
 
   const addItem = () => {
     if (!form.item || !form.vendor || !form.price) return;
@@ -54,7 +55,7 @@ export default function Dashboard() {
     });
   };
 
-  // ✅ Group data by item → vendor
+  //  Group data
   const grouped = {};
   items.forEach((entry) => {
     if (!grouped[entry.item]) grouped[entry.item] = {};
@@ -64,43 +65,81 @@ export default function Dashboard() {
     grouped[entry.item][entry.vendor].push(entry);
   });
 
-  // ✅ ✅ FIX: Build aligned chart data (THIS SOLVES YOUR ISSUE)
+  //  Build summary table
+  const buildSummaryData = (grouped) => {
+    const summary = [];
 
-const buildChartData = (vendors) => {
-  const dateMap = {};
-  const allVendors = Object.keys(vendors);
+    Object.keys(grouped).forEach((item) => {
+      const vendors = grouped[item];
 
-  // Step 1: collect all dates
-  Object.keys(vendors).forEach((vendor) => {
-    vendors[vendor].forEach((entry) => {
-      const date = entry.date;
+      let bestVendor = null;
+      let bestPrice = Infinity;
+      let bestLatest = null;
+      let bestPrev = null;
 
-      if (!dateMap[date]) {
-        dateMap[date] = { date };
+      Object.keys(vendors).forEach((vendor) => {
+        const entries = vendors[vendor].sort(
+          (a, b) => new Date(a.date) - new Date(b.date)
+        );
+
+        const latest = entries[entries.length - 1];
+        const prev = entries[entries.length - 2];
+
+        if (latest.price < bestPrice) {
+          bestPrice = latest.price;
+          bestVendor = vendor;
+          bestLatest = latest;
+          bestPrev = prev;
+        }
+      });
+
+      let change = null;
+      if (bestPrev) {
+        change = bestLatest.price - bestPrev.price;
       }
 
-      dateMap[date][vendor] = entry.price;
+      summary.push({
+        item,
+        vendor: bestVendor,
+        lastPrice: bestLatest.price,
+        change,
+        bestPrice
+      });
     });
-  });
 
-  // Step 2: ensure ALL vendors exist on every date
-  Object.values(dateMap).forEach((row) => {
-    allVendors.forEach((vendor) => {
-      if (!(vendor in row)) {
-        row[vendor] = null; // ✅ this is the key fix
-      }
-    });
-  });
+    return summary;
+  };
 
-  return Object.values(dateMap).sort(
-    (a, b) => new Date(a.date) - new Date(b.date)
-  );
-};
-
+  const summaryData = buildSummaryData(grouped);
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      {/* ✅ FORM */}
+    <div className="p-6 max-w-5xl mx-auto">
+
+      {/* NAVIGATION */}
+      <div className="flex gap-4 mb-6">
+        <button
+          className="text-blue-600 underline"
+          onClick={() => router.push("/upload")}
+        >
+          Upload Invoice
+        </button>
+
+        <button
+          className="text-blue-600 underline"
+          onClick={() => router.push("/manage")}
+        >
+          Manage Items & Vendors
+        </button>
+
+        <button
+          className="text-blue-600 underline"
+          onClick={() => router.push("/vendors")}
+        >
+          Vendor Insights
+        </button>
+      </div>
+
+      {/* FORM */}
       <div className="border p-4 rounded mb-6">
         <h2 className="text-xl font-bold mb-2">Add Item Price</h2>
 
@@ -141,131 +180,67 @@ const buildChartData = (vendors) => {
         </button>
       </div>
 
-      {/* ✅ DATA */}
-      {Object.keys(grouped).map((item) => {
-        const vendors = grouped[item];
-        
-let bestVendor = null;
-let bestPrice = Infinity;
+      {/* ✅ SUMMARY TABLE */}
+      <table className="w-full border-collapse border">
+        <thead>
+          <tr className="border-b bg-gray-100">
+            <th className="text-left p-2">Item</th>
+            <th className="text-left p-2">Vendor</th>
+            <th className="text-left p-2">Last Price</th>
+            <th className="text-left p-2">Change</th>
+            <th className="text-left p-2">Best Price</th>
+          </tr>
+        </thead>
 
-Object.keys(vendors).forEach((vendor) => {
-  const latest = vendors[vendor].sort(
-    (a, b) => new Date(b.date) - new Date(a.date)
-  )[0];
+        <tbody>
+          {summaryData.map((row, idx) => (
+            <tr key={idx} className="border-b hover:bg-gray-50">
 
-  if (latest.price < bestPrice) {
-    bestPrice = latest.price;
-    bestVendor = vendor;
-  }
-});
+              {/* ITEM */}
+              <td className="p-2 font-semibold">
+                {row.item}
+              </td>
 
+              {/* VENDOR */}
+              <td
+                className="p-2 text-blue-600 underline cursor-pointer"
+                onClick={() =>
+                  router.push(`/details?item=${row.item}&vendor=${row.vendor}`)
+                }
+              >
+                {row.vendor}
+              </td>
 
-        // ✅ Build proper dataset for chart
-        const chartData = buildChartData(vendors);
+              {/* LAST PRICE */}
+              <td className="p-2">
+                ${row.lastPrice.toFixed(2)}
+              </td>
 
-        return (
-          <div key={item} className="border p-4 rounded mb-6">
-            <h3 className="text-lg font-bold mb-2">{item}</h3>
+              {/* CHANGE */}
+              <td className="p-2">
+                {row.change !== null && (
+                  <span
+                    className={
+                      row.change > 0
+                        ? "text-red-500"
+                        : "text-green-600"
+                    }
+                  >
+                    {row.change > 0 ? "↑" : "↓"}{" "}
+                    {Math.abs(row.change).toFixed(2)}
+                  </span>
+                )}
+              </td>
 
-            
-<p className="text-sm mb-2 text-green-700 font-semibold">
-  ✅ Best Price: {bestVendor} (${bestPrice.toFixed(2)})
-</p>
+              {/* BEST PRICE */}
+              <td className="p-2 font-bold text-green-600">
+                ${row.bestPrice.toFixed(2)}
+              </td>
 
-
-            <table className="w-full mb-4">
-              <thead>
-                <tr>
-                  <th>Vendor</th>
-                  <th>Latest</th>
-                  <th>Change</th>
-                  <th>Date</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {Object.keys(vendors).map((vendor) => {
-                  const entries = vendors[vendor].sort(
-                    (a, b) => new Date(a.date) - new Date(b.date)
-                  );
-
-                  const latest = entries[entries.length - 1];
-                  const prev = entries[entries.length - 2];
-
-                  let change = null;
-                  if (prev) change = latest.price - prev.price;
-
-                  return (
-                    <tr key={vendor}>
-                      <td>
-                        <span
-                          className="text-blue-600 cursor-pointer underline"
-                          onClick={() =>
-                            router.push(
-                              `/details?item=${item}&vendor=${vendor}`
-                            )
-                          }
-                        >
-                          {vendor}
-                        </span>
-                      </td>
-
-                      <td>${latest.price.toFixed(2)}</td>
-
-                      <td>
-                        {change !== null && (
-                          <span
-                            className={
-                              change > 0
-                                ? "text-red-500"
-                                : "text-green-600"
-                            }
-                          >
-                            {change > 0 ? "↑" : "↓"}{" "}
-                            {Math.abs(change).toFixed(2)}
-                          </span>
-                        )}
-                      </td>
-
-                      <td>{latest.date}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-
-            {/* ✅ ✅ FINAL FIXED CHART */}
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={chartData}>
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-
-                {Object.keys(vendors).map((vendor, index) => {
-                  const colors = [
-                    "#3b82f6",
-                    "#10b981",
-                    "#ef4444",
-                    "rgb(187, 51, 137)",
-                    "#f59e0b"
-                  ];
-
-                  return (
-                    <Line
-                      key={vendor}
-                      dataKey={vendor}
-                      stroke={colors[index % colors.length]}
-                      name={vendor}
-                      connectNulls={true}
-                    />
-                  );
-                })}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        );
-      })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
